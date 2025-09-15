@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>Gemini Voice Chat (오디오+텍스트)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; }
+    .row { display: flex; gap: 8px; }
+    input[type=text] { flex: 1; padding: 10px; font-size: 16px; }
+    button { padding: 10px 14px; font-size: 16px; cursor: pointer; }
+    .log { margin-top: 16px; white-space: pre-wrap; background: #f7f7f8; padding: 12px; border-radius: 8px; }
+  </style>
+</head>
+<body>
+  <h1>Gemini Voice Chat</h1>
+  <div class="row">
+    <input id="msg" type="text" placeholder="메시지를 입력하고 Enter 또는 Send" />
+    <button id="send">Send</button>
+  </div>
+  <audio id="player" controls></audio>
+  <div class="log" id="log"></div>
+
+  <script>
+    const input = document.getElementById('msg');
+    const btn = document.getElementById('send');
+    const audioEl = document.getElementById('player');
+    const logEl = document.getElementById('log');
+
+    async function send() {
+      const text = input.value.trim();
+      if (!text) return;
+      log(`You > ${text}`);
+      input.value = '';
+      btn.disabled = true;
+
+      try {
+        const res = await fetch('http://localhost:8000/api/voice-reply', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ text })
+        });
+        if (!res.ok) {
+          const errText = await res.text();
+          throw new Error(errText || `HTTP ${res.status}`);
+        }
+        const data = await res.json(); // { text, audio_b64, mime }
+
+        // 텍스트 표시
+        if (data.text) {
+          log(`Gemini > ${data.text}`);
+        } else {
+          log(`Gemini > (no text returned)`);
+        }
+
+        // 오디오 재생
+        if (data.audio_b64 && data.mime) {
+          const url = `data:${data.mime};base64,${data.audio_b64}`;
+          audioEl.src = url;
+          try { await audioEl.play(); } catch {}
+        }
+      } catch (e) {
+        log(`Error: ${e.message}`);
+        console.error(e);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function log(s) {
+      logEl.textContent += s + '\n';
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
+    btn.addEventListener('click', send);
+  </script>
+</body>
+</html>
