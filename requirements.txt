@@ -1,2 +1,4 @@
 google-genai>=1.16.0
 python-dotenv>=1.0.1
+google-generativeai>=1.16.0
+pydantic>=2.6.4
