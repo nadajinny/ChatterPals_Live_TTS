@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>AI 음성 어시스턴트</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      text-align: center;
+      padding-top: 50px;
+    }
+    button {
+      font-size: 18px;
+      padding: 10px 20px;
+      margin-top: 20px;
+    }
+    #transcript, #answer {
+      margin-top: 20px;
+      font-size: 16px;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>🎙️ Gemini 음성 어시스턴트</h1>
+
+  <button id="recordBtn">🎤 말하기 시작</button>
+
+  <div id="status"></div>
+  <div id="transcript"></div>
+  <div id="answer"></div>
+  <div style="margin-top: 30px;">
+  <input type="text" id="textInput" placeholder="텍스트로 질문해 보세요!" style="width: 60%; padding: 10px; font-size: 16px;" />
+  <button id="sendBtn">📨 전송</button>
+  </div>
+
+  <audio id="audioPlayer" controls style="margin-top: 20px;"></audio>
+
+  <script>
+    const recordBtn = document.getElementById("recordBtn");
+    const statusEl = document.getElementById("status");
+    const transcriptEl = document.getElementById("transcript");
+    const answerEl = document.getElementById("answer");
+    const audioPlayer = document.getElementById("audioPlayer");
+    const sendBtn = document.getElementById("sendBtn");
+    const textInput = document.getElementById("textInput");
+
+    let mediaRecorder, audioChunks = [];
+    //텍스트 입력 관련
+    sendBtn.addEventListener("click", async () => {
+      const inputText = textInput.value.trim();
+      if (!inputText) return;
+
+      statusEl.innerText = "🔁 처리 중...";
+      transcriptEl.innerText = "🗣️ 질문 (텍스트): " + inputText;
+      answerEl.innerText = "";
+      audioPlayer.src = "";
+
+      try {
+        const response = await fetch("/api/get-ai-response-from-text", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: inputText })
+        });
+
+        if (!response.ok) throw new Error("서버 오류 발생");
+
+        const json = await response.json();
+        const answer = json.response_text;
+        answerEl.innerText = "💬 답변: " + answer;
+
+        const ttsResponse = await fetch(`/api/tts?text=${encodeURIComponent(answer)}`);
+        if (!ttsResponse.ok) throw new Error("TTS 생성 실패");
+
+        const audioData = await ttsResponse.blob();
+        const audioUrl = URL.createObjectURL(audioData);
+        audioPlayer.src = audioUrl;
+        audioPlayer.play();
+
+        statusEl.innerText = "✅ 완료";
+      } catch (err) {
+        console.error(err);
+        statusEl.innerText = "❌ 오류: " + err.message;
+      }
+    });
+    //언어입력 관련 로직
+    recordBtn.addEventListener("click", async () => {
+      if (mediaRecorder && mediaRecorder.state === "recording") {
+        mediaRecorder.stop();
+        recordBtn.innerText = "🎤 말하기 시작";
+        statusEl.innerText = "🔁 처리 중...";
+      } else {
+        audioChunks = [];
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+
+        mediaRecorder.ondataavailable = e => {
+          audioChunks.push(e.data);
+        };
+
+        mediaRecorder.onstop = async () => {
+          const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
+          const formData = new FormData();
+          formData.append("audio", audioBlob, "recording.webm");
+
+          try {
+            // 1️. 백엔드에 오디오 업로드
+            const response = await fetch("/api/get-ai-response", { 
+                method: "POST",
+                body: formData
+            });
+
+            if (!response.ok) throw new Error("서버 오류 발생");
+
+            const json = await response.json();
+            const transcript = json.transcript;
+            const answer = json.response_text;
+
+            // 2️. 화면에 출력
+            transcriptEl.innerText = "🗣️ 질문 (STT): " + transcript;
+            answerEl.innerText = "💬 답변: " + answer;
+
+            // 3️. TTS로 오디오 받아서 재생
+            const ttsResponse = await fetch(`/api/tts?text=${encodeURIComponent(answer)}`);
+            if (!ttsResponse.ok) throw new Error("TTS 생성 실패");
+
+            const audioData = await ttsResponse.blob();
+            const audioUrl = URL.createObjectURL(audioData);
+            audioPlayer.src = audioUrl;
+            audioPlayer.play();
+
+            statusEl.innerText = "✅ 완료";
+
+          } catch (err) {
+            console.error(err);
+            statusEl.innerText = "❌ 오류: " + err.message;
+          }
+        };
+
+        mediaRecorder.start();
+        recordBtn.innerText = "🛑 말하기 중지";
+        statusEl.innerText = "🎙️ 녹음 중...";
+
+      }
+    });
+  </script>
+</body>
+</html>
